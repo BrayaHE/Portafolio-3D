@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cube en Three.js</title>
+</head>
+<body>
+    
+</body>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script>
+    
+    //Creamos nuestra escena
+    const escena = new THREE.Scene();
+    
+    //Creamos la camara
+    const camara = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1, // de 0.1 a 1.0
+        1000
+    );
+
+    camara.position.z = 5;
+
+    //Renderer
+    const renderer = new THREE.WebGLRenderer({
+        antialias: true
+    });
+    
+    //Definimos tamaño del canvas
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    document.body.appendChild(renderer.domElement);
+
+    //Definimos nuestra figura
+    const figura = new THREE.BoxGeometry(1, 1, 1);
+
+    const color = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+
+    const cubo = new THREE.Mesh(figura, color);
+
+    //Añadimos cubo a nuestra escena
+    escena.add(cubo);
+
+    //Función de animación
+    function animar() {
+        requestAnimationFrame(animar);
+
+        cubo.rotation.x += 0.01;
+        
+        renderer.render(escena, camara);
+    }
+    
+    animar();
+
+</script>
+</html>
