@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cube in Three.js ES6</title>
+</head>
+<body>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+            "orbit": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/controls/OrbitControls.js"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'orbit';
+    
+    // Creamos la escena
+    const escena = new THREE.Scene();
+
+    // Creamos la cámara
+    const camara = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+    );
+    camara.position.z = 5;
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Geometría del cubo
+    const figura = new THREE.BoxGeometry(1, 1, 1);
+    const cargadorTextura = new THREE.TextureLoader();
+    const textura = cargadorTextura.load('prueba.jpeg');
+    const material = new THREE.MeshBasicMaterial({ map: textura });
+    const cubo = new THREE.Mesh(figura, material);
+
+    // Añadimos el cubo a la escena
+    escena.add(cubo);
+
+    // OrbitControls
+    const controles = new OrbitControls(camara, renderer.domElement);
+    controles.enableDamping = true; //Suavisado de Movimiento
+    controles.dampingFactor = 0.04; // Intensidad de suavisado
+    controles.enableZoom = true;
+    controles.minDistance = 2; // Valor minimo de acercarse
+    controles.maxDistance = 9; // Distancia maxima
+    controles.target.set(0,0,0);
+
+    // Animación
+    const animar = () => {
+        requestAnimationFrame(animar);
+
+        cubo.rotation.x += 0.01;
+        //cubo.rotation.y += 0.01;
+        //cubo.rotation.z += 0.01;
+
+        controles.update();
+
+        renderer.render(escena, camara);
+    };
+
+    animar();
+
+    // Ajuste al redimensionar ventana
+    window.addEventListener('resize', () => {
+        camara.aspect = window.innerWidth / window.innerHeight;
+        camara.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+
+</body>
+</html>
