@@ -4,8 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cube in Three.js ES6</title>
+    <style>
+        .boton-regresar {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            padding: 8px 12px;
+            background: #222;
+            color: #fff;
+            text-decoration: none;
+            border: 1px solid #444;
+            border-radius: 6px;
+            font-family: Arial, sans-serif;
+            z-index: 10;
+        }
+
+        .boton-regresar:hover {
+            background: #333;
+        }
+    </style>
 </head>
 <body>
+
+<a class="boton-regresar" href="../index.html">Regresar</a>
 
 <script type="importmap">
     {
@@ -39,10 +60,45 @@
 
     // Geometría del cubo
     const figura = new THREE.BoxGeometry(1, 1, 1);
-    const cargadorTextura = new THREE.TextureLoader();
-    const textura = cargadorTextura.load('prueba.jpeg');
-    const material = new THREE.MeshBasicMaterial({ map: textura });
-    const cubo = new THREE.Mesh(figura, material);
+
+    const crearTexturaCara = (colores) => {
+        const canvas = document.createElement('canvas');
+        const size = 256;
+        const gap = 8;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, size, size);
+
+        const cell = (size - gap * 4) / 3;
+        let index = 0;
+        for (let y = 0; y < 3; y += 1) {
+            for (let x = 0; x < 3; x += 1) {
+                const px = gap + x * (cell + gap);
+                const py = gap + y * (cell + gap);
+                ctx.fillStyle = colores[index];
+                ctx.fillRect(px, py, cell, cell);
+                index += 1;
+            }
+        }
+
+        const textura = new THREE.CanvasTexture(canvas);
+        textura.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        return textura;
+    };
+
+    const materiales = [
+        new THREE.MeshBasicMaterial({ map: crearTexturaCara(Array(9).fill('#ff6b6b')) }),
+        new THREE.MeshBasicMaterial({ map: crearTexturaCara(Array(9).fill('#6bff8a')) }),
+        new THREE.MeshBasicMaterial({ map: crearTexturaCara(Array(9).fill('#6bb7ff')) }),
+        new THREE.MeshBasicMaterial({ map: crearTexturaCara(Array(9).fill('#ffe66b')) }),
+        new THREE.MeshBasicMaterial({ map: crearTexturaCara(Array(9).fill('#ff9b6b')) }),
+        new THREE.MeshBasicMaterial({ map: crearTexturaCara(Array(9).fill('#d36bff')) })
+    ];
+
+    const cubo = new THREE.Mesh(figura, materiales);
 
     // Añadimos el cubo a la escena
     escena.add(cubo);
