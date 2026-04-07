@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Solar Interactivo | Three.js</title>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+    <div id="app"></div>
+    <div id="runtimeWarning" class="panel" hidden></div>
+
+    <section id="hud" class="panel">
+        <h1>Sistema Solar Interactivo</h1>
+        <p>Arrastra para orbitar camara | Rueda para zoom | Clic en un planeta para ver informacion.</p>
+    </section>
+
+    <section id="controls" class="panel">
+        <div class="line">
+            <button id="toggleAnimation" type="button">Pausar animacion</button>
+        </div>
+        <div class="line">
+            <label for="speedRange">Velocidad global: <span id="speedValue">1.00x</span></label>
+            <input id="speedRange" type="range" min="0" max="3" step="0.05" value="1">
+        </div>
+        <div class="line">
+            <label>
+                <input id="toggleOrbits" type="checkbox" checked>
+                Mostrar orbitas
+            </label>
+        </div>
+    </section>
+
+    <section id="planetInfo" class="panel">
+        <h2>Selecciona un planeta</h2>
+        <p id="planetDesc">Haz clic en cualquiera de los 8 planetas para ver sus datos principales.</p>
+        <p id="planetData">Datos: -</p>
+    </section>
+
+    <script>
+        const runtimeWarning = document.getElementById('runtimeWarning');
+        if (location.protocol === 'file:') {
+            runtimeWarning.hidden = false;
+            runtimeWarning.textContent = 'Aviso: abre este proyecto con Live Server (http://localhost...) para que Three.js cargue correctamente.';
+        }
+
+        window.addEventListener('error', (event) => {
+            runtimeWarning.hidden = false;
+            runtimeWarning.textContent = `Error JS: ${event.message}`;
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            runtimeWarning.hidden = false;
+            runtimeWarning.textContent = `Error de modulo: ${String(event.reason)}`;
+        });
+    </script>
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html>

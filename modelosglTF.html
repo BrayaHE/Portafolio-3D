@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modelos glTF | Three.js</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #111; color: #eee; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        #app { width: 100vw; height: 100vh; }
+
+        #hud {
+            position: fixed; top: 16px; left: 16px;
+            background: rgba(0,0,0,0.7); padding: 14px 20px;
+            border-radius: 10px; z-index: 10; max-width: 340px;
+        }
+        #hud h1 { font-size: 1.1rem; margin-bottom: 6px; color: #8cf; }
+        #hud p { font-size: 0.82rem; line-height: 1.45; color: #bbb; }
+
+        #panel {
+            position: fixed; top: 16px; right: 16px;
+            background: rgba(0,0,0,0.75); padding: 14px 20px;
+            border-radius: 10px; z-index: 10; max-width: 300px;
+        }
+        #panel h2 { font-size: 0.95rem; margin-bottom: 8px; color: #fc8; }
+        #panel .btn {
+            display: block; width: 100%; margin: 5px 0; padding: 7px 10px;
+            background: #2a3a5a; color: #cde; border: 1px solid #456;
+            border-radius: 6px; cursor: pointer; font-size: 0.82rem;
+            transition: background 0.2s;
+        }
+        #panel .btn:hover { background: #3a5a8a; }
+        #panel .btn.active { background: #4a7acc; border-color: #7af; }
+
+        #info {
+            position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); padding: 10px 20px;
+            border-radius: 8px; z-index: 10; font-size: 0.8rem; color: #aaa;
+            text-align: center; max-width: 600px;
+        }
+
+        #loading {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85); padding: 30px 50px;
+            border-radius: 12px; z-index: 20; font-size: 1.1rem; color: #8cf;
+            text-align: center;
+        }
+        #loading.hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <div id="loading">Cargando modelos...</div>
+
+    <div id="hud">
+        <h1>Practica: Modelos glTF</h1>
+        <p>Carga de 3 modelos GLB con GLTFLoader.<br>
+        Transformaciones de posicion, rotacion y escala.<br>
+        Uso de <code>traverse()</code> para modificar materiales.</p>
+    </div>
+
+    <div id="panel">
+        <h2>Modificar Materiales (traverse)</h2>
+        <button class="btn" id="btnOriginal">Materiales originales</button>
+        <button class="btn" id="btnWireframe">Wireframe</button>
+        <button class="btn" id="btnColor">Cambiar colores</button>
+        <button class="btn" id="btnMetallic">Metalico / Brillante</button>
+        <button class="btn" id="btnEmissive">Emision de luz</button>
+        <button class="btn" id="btnTransparent">Semi-transparente</button>
+    </div>
+
+    <div id="info">
+        Arrastra para orbitar | Rueda para zoom | Usa los botones para modificar materiales con traverse()
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // ─── Escena ───
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+        camera.position.set(0, 3, 10);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('app').appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.target.set(0, 1.5, 0);
+
+        // ─── Luces ───
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff5e0, 2.5);
+        dirLight.position.set(5, 8, 6);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.set(2048, 2048);
+        dirLight.shadow.camera.near = 0.1;
+        dirLight.shadow.camera.far = 30;
+        dirLight.shadow.camera.left = -10;
+        dirLight.shadow.camera.right = 10;
+        dirLight.shadow.camera.top = 10;
+        dirLight.shadow.camera.bottom = -10;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0x8899cc, 0.8);
+        fillLight.position.set(-4, 3, -5);
+        scene.add(fillLight);
+
+        // ─── Piso ───
+        const floorGeo = new THREE.PlaneGeometry(30, 30);
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0x2a2a3e,
+            roughness: 0.85,
+            metalness: 0.1
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // ─── Grid helper ───
+        const grid = new THREE.GridHelper(30, 30, 0x444466, 0x333355);
+        grid.position.y = 0.01;
+        scene.add(grid);
+
+        // ─── Etiquetas de pedestal ───
+        function createPedestal(x, z, label) {
+            const geo = new THREE.CylinderGeometry(1.2, 1.4, 0.15, 32);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x3a3a5a, roughness: 0.6, metalness: 0.3 });
+            const pedestal = new THREE.Mesh(geo, mat);
+            pedestal.position.set(x, 0.075, z);
+            pedestal.receiveShadow = true;
+            scene.add(pedestal);
+
+            // Texto con canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#222';
+            ctx.fillRect(0, 0, 256, 64);
+            ctx.fillStyle = '#ddd';
+            ctx.font = 'bold 22px Segoe UI, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, 128, 40);
+            const tex = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.position.set(x, -0.2, z + 1.6);
+            sprite.scale.set(2.2, 0.55, 1);
+            scene.add(sprite);
+        }
+
+        createPedestal(-4, 0, 'Duck (Pato)');
+        createPedestal(0, 0, 'Avocado (Aguacate)');
+        createPedestal(4, 0, 'DamagedHelmet');
+
+        // ─── Carga de modelos con GLTFLoader ───
+        const loader = new GLTFLoader();
+        const loadedModels = [];
+        const originalMaterials = new Map();
+        let modelsLoaded = 0;
+
+        function onModelLoaded() {
+            modelsLoaded++;
+            if (modelsLoaded === 3) {
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        // --- Modelo 1: Duck ---
+        // Transformaciones: posicion a la izquierda, rotacion en Y, escala aumentada
+        loader.load('./models/Duck.glb', (gltf) => {
+            const model = gltf.scene;
+
+            // Transformaciones
+            model.position.set(-4, 0.15, 0);       // Posicion: izquierda
+            model.rotation.set(0, Math.PI / 4, 0);  // Rotacion: 45 grados en Y
+            model.scale.set(2.5, 2.5, 2.5);         // Escala: 2.5x mas grande
+
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    // Guardar material original para restaurar despues
+                    originalMaterials.set(child.uuid, child.material.clone());
+                }
+            });
+
+            scene.add(model);
+            loadedModels.push(model);
+            onModelLoaded();
+        });
+
+        // --- Modelo 2: Avocado ---
+        // Transformaciones: centro, rotacion distinta, escala muy grande (el modelo es pequeño)
+        loader.load('./models/Avocado.glb', (gltf) => {
+            const model = gltf.scene;
+
+            // Transformaciones
+            model.position.set(0, 0.15, 0);            // Posicion: centro
+            model.rotation.set(0, -Math.PI / 3, 0);     // Rotacion: -60 grados en Y
+            model.scale.set(35, 35, 35);                 // Escala: 35x (modelo muy pequeño)
+
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    originalMaterials.set(child.uuid, child.material.clone());
+                }
+            });
+
+            scene.add(model);
+            loadedModels.push(model);
+            onModelLoaded();
+        });
+
+        // --- Modelo 3: DamagedHelmet ---
+        // Transformaciones: derecha, rotacion hacia el espectador, escala ajustada
+        loader.load('./models/DamagedHelmet.glb', (gltf) => {
+            const model = gltf.scene;
+
+            // Transformaciones
+            model.position.set(4, 1.8, 0);              // Posicion: derecha, elevado
+            model.rotation.set(0.2, Math.PI / 5, 0);    // Rotacion: leve inclinacion + giro
+            model.scale.set(1.3, 1.3, 1.3);             // Escala: 1.3x
+
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    originalMaterials.set(child.uuid, child.material.clone());
+                }
+            });
+
+            scene.add(model);
+            loadedModels.push(model);
+            onModelLoaded();
+        });
+
+        // ─── Funciones traverse() para modificar materiales ───
+
+        // Restaurar materiales originales
+        function applyOriginal() {
+            loadedModels.forEach((model) => {
+                model.traverse((child) => {
+                    if (child.isMesh && originalMaterials.has(child.uuid)) {
+                        child.material = originalMaterials.get(child.uuid).clone();
+                        child.material.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
+        // Activar modo wireframe en todos los meshes
+        function applyWireframe() {
+            loadedModels.forEach((model) => {
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.wireframe = true;
+                        child.material.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
+        // Cambiar colores de cada modelo usando traverse()
+        function applyColorChange() {
+            const colors = [0xff6644, 0x44cc88, 0x4488ff];
+            loadedModels.forEach((model, index) => {
+                const color = new THREE.Color(colors[index % colors.length]);
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.color.copy(color);
+                        child.material.map = null;   // Quitar textura para ver el color puro
+                        child.material.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
+        // Hacer materiales metalicos/brillantes
+        function applyMetallic() {
+            loadedModels.forEach((model) => {
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.metalness = 1.0;
+                        child.material.roughness = 0.1;
+                        child.material.color.set(0xcccccc);
+                        child.material.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
+        // Agregar emision a los materiales
+        function applyEmissive() {
+            const emissiveColors = [0xff4400, 0x00ff88, 0x4488ff];
+            loadedModels.forEach((model, index) => {
+                const emColor = new THREE.Color(emissiveColors[index % emissiveColors.length]);
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.emissive = emColor;
+                        child.material.emissiveIntensity = 0.6;
+                        child.material.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
+        // Hacer modelos semi-transparentes
+        function applyTransparent() {
+            loadedModels.forEach((model) => {
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.transparent = true;
+                        child.material.opacity = 0.45;
+                        child.material.depthWrite = false;
+                        child.material.needsUpdate = true;
+                    }
+                });
+            });
+        }
+
+        // ─── Botones del panel ───
+        const buttons = {
+            btnOriginal: applyOriginal,
+            btnWireframe: () => { applyOriginal(); applyWireframe(); },
+            btnColor: () => { applyOriginal(); applyColorChange(); },
+            btnMetallic: () => { applyOriginal(); applyMetallic(); },
+            btnEmissive: () => { applyOriginal(); applyEmissive(); },
+            btnTransparent: () => { applyOriginal(); applyTransparent(); }
+        };
+
+        Object.entries(buttons).forEach(([id, fn]) => {
+            document.getElementById(id).addEventListener('click', (e) => {
+                document.querySelectorAll('#panel .btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                fn();
+            });
+        });
+
+        // ─── Animacion ───
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            // Rotacion continua de los modelos
+            loadedModels.forEach((model, i) => {
+                model.rotation.y += delta * (0.3 + i * 0.15);
+            });
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // ─── Responsive ───
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

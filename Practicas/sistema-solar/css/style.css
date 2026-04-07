@@ -1,0 +1,130 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: #000;
+    color: #e8ecff;
+}
+
+#app {
+    position: fixed;
+    inset: 0;
+}
+
+.panel {
+    position: fixed;
+    z-index: 20;
+    width: min(350px, calc(100vw - 2rem));
+    border: 1px solid rgba(147, 170, 255, 0.35);
+    border-radius: 12px;
+    background: rgba(6, 10, 20, 0.72);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+
+#hud {
+    top: 1rem;
+    left: 1rem;
+    padding: 0.85rem 1rem;
+}
+
+#hud h1 {
+    margin: 0 0 0.3rem;
+    font-size: 1rem;
+    letter-spacing: 0.2px;
+}
+
+#hud p {
+    margin: 0;
+    font-size: 0.86rem;
+    color: #c7d1ff;
+}
+
+#controls {
+    top: 1rem;
+    right: 1rem;
+    padding: 0.85rem 1rem;
+}
+
+#controls .line {
+    margin: 0.4rem 0;
+    font-size: 0.88rem;
+}
+
+#controls label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: #dbe3ff;
+}
+
+#speedRange {
+    width: 100%;
+}
+
+#planetInfo {
+    bottom: 1rem;
+    left: 1rem;
+    padding: 0.85rem 1rem;
+    min-height: 104px;
+}
+
+#runtimeWarning {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(560px, calc(100vw - 2rem));
+    padding: 1rem 1.1rem;
+    border-color: rgba(255, 188, 108, 0.65);
+    color: #ffdca9;
+    text-align: center;
+    font-size: 0.95rem;
+}
+
+#planetInfo h2 {
+    margin: 0 0 0.3rem;
+    font-size: 1rem;
+}
+
+#planetInfo p {
+    margin: 0.25rem 0;
+    font-size: 0.86rem;
+    color: #ccd5ff;
+}
+
+button,
+input[type="range"],
+input[type="checkbox"] {
+    cursor: pointer;
+}
+
+button {
+    border: 1px solid rgba(160, 184, 255, 0.6);
+    background: rgba(23, 33, 64, 0.85);
+    color: #f0f3ff;
+    border-radius: 8px;
+    padding: 0.42rem 0.65rem;
+    font-weight: 600;
+}
+
+button:hover {
+    background: rgba(38, 53, 98, 0.9);
+}
+
+@media (max-width: 820px) {
+    #controls {
+        top: auto;
+        bottom: 1rem;
+        right: 1rem;
+    }
+
+    #planetInfo {
+        width: min(95vw, 420px);
+    }
+}
