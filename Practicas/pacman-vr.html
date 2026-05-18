@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man VR - First Person 3D</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #FFD700;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            z-index: 100;
+            pointer-events: none;
+            font-family: 'Courier New', monospace;
+        }
+
+        #lives {
+            margin-top: 10px;
+            font-size: 20px;
+        }
+
+        #message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #FFD700;
+            font-size: 48px;
+            font-weight: bold;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.9);
+            z-index: 200;
+            text-align: center;
+            display: none;
+        }
+
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #FFF;
+            font-size: 16px;
+            text-align: center;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 10px;
+            max-width: 90%;
+        }
+
+        #vrButton {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px 30px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 100;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s;
+        }
+
+        #vrButton:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+
+        #vrButton:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        #minimap {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 250px;
+            height: 250px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 3px solid #FFD700;
+            border-radius: 10px;
+            z-index: 100;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7);
+        }
+
+        #minimapCanvas {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div id="score">PUNTOS: 0</div>
+        <div id="lives">VIDAS: ❤️❤️❤️</div>
+    </div>
+
+    <div id="message"></div>
+
+    <div id="instructions">
+        🖱️ Click para bloquear ratón | ⬆⬇ W/S: Avanzar | ⬅➡ A/D: Girar | Ratón: Mirar<br>
+        👻 ¡Recoge pastillas y evita fantasmas! Click tras morir para reiniciar
+    </div>
+
+    <div id="minimap">
+        <canvas id="minimapCanvas"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // ============================================
+        // CONFIGURACIÓN Y VARIABLES GLOBALES
+        // ============================================
+        let scene, camera, renderer, clock;
+        let player, maze, ghosts = [], pellets = [], powerPellets = [];
+        let score = 0, lives = 3, gameState = 'playing';
+        let keys = {}, moveSpeed = 0.08, turnSpeed = 0.002;
+        let powerMode = false, powerModeTimer = 0;
+        let invincible = false, invincibleTimer = 0; // frames de invencibilidad tras golpe
+        let vrSession = null, xrReferenceSpace = null;
+        let controllers = [];
+
+        // Minimapa
+        let minimapCanvas, minimapCtx;
+        const minimapScale = 12;
+
+        // Sonidos (Web Audio API)
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const sounds = {
+            pellet: { freq: 880, duration: 0.05 },
+            powerPellet: { freq: 440, duration: 0.2 },
+            ghost: { freq: 220, duration: 0.3 },
+            death: { freq: 110, duration: 0.5 },
+            win: { freq: 1320, duration: 0.8 }
+        };
+
+        // Laberinto (0=pasillo, 1=muro, 2=pellet, 3=power pellet, 4=spawn pacman, 5=spawn fantasma)
+        const mazeLayout = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
+            [1,3,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,3,1],
+            [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,2,1,2,1,1,1,1,1,2,1,2,1,1,2,1],
+            [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+            [1,1,1,1,2,1,1,1,0,5,0,1,1,1,2,1,1,1,1],
+            [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+            [1,1,1,1,2,1,0,1,1,0,1,1,0,1,2,1,1,1,1],  // col 9 abierta = salida casa fantasmas
+            [0,0,0,0,2,0,0,1,5,5,5,1,0,0,2,0,0,0,0],
+            [1,1,1,1,2,1,0,1,1,1,1,1,0,1,2,1,1,1,1],
+            [0,0,0,1,2,1,0,0,0,0,0,0,0,1,2,1,0,0,0],
+            [1,1,1,1,2,1,0,1,1,1,1,1,0,1,2,1,1,1,1],
+            [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
+            [1,2,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,2,1],
+            [1,3,2,1,2,2,2,2,2,4,2,2,2,2,2,1,2,3,1],
+            [1,1,2,1,2,1,2,1,1,1,1,1,2,1,2,1,2,1,1],
+            [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        const cellSize = 2;
+        const wallHeight = 3;
+
+        // ============================================
+        // INICIALIZACIÓN
+        // ============================================
+        function init() {
+            // Escena
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000011);
+            scene.fog = new THREE.Fog(0x000011, 8, 40); // empieza lejos para ver el corredor
+
+            // Cámara (primera persona)
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.rotation.order = 'YXZ';
+            camera.position.set(0, 1.5, 0); // Altura de ojos dentro de los muros
+
+            // Renderer con WebXR
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Optimización móvil
+            renderer.xr.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Clock
+            clock = new THREE.Clock();
+
+            // Luces
+            const ambientLight = new THREE.AmbientLight(0x8888cc, 1.0); // más brillo para ver los pasillos
+            scene.add(ambientLight);
+
+            // Luz puntual que sigue al jugador (se mueve en el animate)
+            window.playerLight = new THREE.PointLight(0xffffff, 1.5, 12);
+            scene.add(window.playerLight);
+
+            // Crear laberinto
+            createMaze();
+
+            // Crear jugador
+            createPlayer();
+
+            // Crear fantasmas
+            createGhosts();
+
+            // Crear pellets
+            createPellets();
+
+            // Controles VR
+            setupVRControls();
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+            document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+            document.addEventListener('click', () => {
+                if (audioContext.state === 'suspended') audioContext.resume();
+                if (gameState !== 'playing') {
+                    restartGame();
+                    return;
+                }
+                if (!renderer.xr.isPresenting) {
+                    document.body.requestPointerLock();
+                }
+            });
+            document.addEventListener('pointerlockchange', () => {
+                if (document.pointerLockElement === document.body) {
+                    // Al activar pointer lock, resetear inclinación vertical
+                    camera.rotation.x = 0;
+                }
+            });
+            // Mouse look en desktop (Pointer Lock API)
+            document.addEventListener('mousemove', (e) => {
+                if (document.pointerLockElement === document.body) {
+                    player.rotation.y -= e.movementX * turnSpeed;
+                    // Solo ajuste vertical con límite estricto para no mirar arriba/abajo en exceso
+                    camera.rotation.x = Math.max(-0.3, Math.min(0.3,
+                        camera.rotation.x - e.movementY * turnSpeed
+                    ));
+                }
+            });
+
+            // Botón VR
+            setupVRButton();
+
+            // Inicializar minimapa
+            initMinimap();
+
+            // Iniciar animación
+            renderer.setAnimationLoop(animate);
+        }
+
+        // ============================================
+        // CREACIÓN DEL LABERINTO
+        // ============================================
+        function createMaze() {
+            maze = new THREE.Group();
+
+            // Material de muros con optimización
+            const wallMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0x0000FF,
+                flatShading: true
+            });
+
+            // Material de suelo
+            const floorMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0x000000
+            });
+
+            const wallGeometry = new THREE.BoxGeometry(cellSize, wallHeight, cellSize);
+            const floorGeometry = new THREE.PlaneGeometry(
+                mazeLayout[0].length * cellSize, 
+                mazeLayout.length * cellSize
+            );
+
+            // Suelo
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = 0;
+            floor.position.x = (mazeLayout[0].length * cellSize) / 2 - cellSize / 2;
+            floor.position.z = (mazeLayout.length * cellSize) / 2 - cellSize / 2;
+            maze.add(floor);
+
+            // Construir muros
+            for (let row = 0; row < mazeLayout.length; row++) {
+                for (let col = 0; col < mazeLayout[row].length; col++) {
+                    if (mazeLayout[row][col] === 1) {
+                        const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                        wall.position.set(
+                            col * cellSize,
+                            wallHeight / 2,
+                            row * cellSize
+                        );
+                        wall.userData.isWall = true;
+                        maze.add(wall);
+                    }
+                }
+            }
+
+            scene.add(maze);
+        }
+
+        // ============================================
+        // JUGADOR
+        // ============================================
+        function createPlayer() {
+            player = new THREE.Group();
+            
+            // Posición inicial (buscar spawn '4')
+            for (let row = 0; row < mazeLayout.length; row++) {
+                for (let col = 0; col < mazeLayout[row].length; col++) {
+                    if (mazeLayout[row][col] === 4) {
+                        player.position.set(col * cellSize, 0, row * cellSize); // y=0: pivote al suelo
+                        break;
+                    }
+                }
+            }
+
+            // Cámara apuntando recto al frente desde el inicio
+            camera.rotation.set(0, 0, 0);
+
+            // Añadir cámara al jugador
+            player.add(camera);
+            scene.add(player);
+        }
+
+        // ============================================
+        // FANTASMAS
+        // ============================================
+        function createGhosts() {
+            const ghostColors = [0xFF0000, 0xFFB8FF, 0x00FFFF, 0xFFB852];
+            const ghostNames = ['Blinky', 'Pinky', 'Inky', 'Clyde'];
+            let ghostIndex = 0;
+
+            for (let row = 0; row < mazeLayout.length; row++) {
+                for (let col = 0; col < mazeLayout[row].length; col++) {
+                    if (mazeLayout[row][col] === 5 && ghostIndex < 4) {
+                        const ghost = createGhost(ghostColors[ghostIndex], ghostNames[ghostIndex]);
+                        ghost.position.set(col * cellSize, 0, row * cellSize);
+                        ghost.userData.startPos = ghost.position.clone();
+                        ghost.userData.direction = new THREE.Vector3(
+                            Math.random() - 0.5, 0, Math.random() - 0.5
+                        ).normalize();
+                        ghosts.push(ghost);
+                        scene.add(ghost);
+                        ghostIndex++;
+                    }
+                }
+            }
+        }
+
+        function createGhost(color, name) {
+            const ghost = new THREE.Group();
+            ghost.userData.name = name;
+            ghost.userData.frightened = false;
+
+            // Cuerpo del fantasma (optimizado)
+            const bodyGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const bodyMaterial = new THREE.MeshLambertMaterial({ color: color });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 0.5;
+            ghost.add(body);
+
+            // Ojos simples
+            const eyeGeometry = new THREE.CircleGeometry(0.15, 8);
+            const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+            
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(-0.2, 0.7, 0.45);
+            ghost.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(0.2, 0.7, 0.45);
+            ghost.add(rightEye);
+
+            // Pupilas
+            const pupilGeometry = new THREE.CircleGeometry(0.08, 8);
+            const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x0000FF });
+            
+            const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            leftPupil.position.set(-0.2, 0.7, 0.46);
+            ghost.add(leftPupil);
+
+            const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+            rightPupil.position.set(0.2, 0.7, 0.46);
+            ghost.add(rightPupil);
+
+            ghost.userData.body = body;
+            ghost.userData.originalColor = color;
+
+            return ghost;
+        }
+
+        // ============================================
+        // PELLETS
+        // ============================================
+        function createPellets() {
+            const pelletGeometry = new THREE.SphereGeometry(0.1, 6, 6);
+            const pelletMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFF00 });
+
+            const powerPelletGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const powerPelletMaterial = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+
+            for (let row = 0; row < mazeLayout.length; row++) {
+                for (let col = 0; col < mazeLayout[row].length; col++) {
+                    if (mazeLayout[row][col] === 2) {
+                        const pellet = new THREE.Mesh(pelletGeometry, pelletMaterial);
+                        pellet.position.set(col * cellSize, 0.5, row * cellSize);
+                        pellet.userData.value = 10;
+                        pellets.push(pellet);
+                        scene.add(pellet);
+                    } else if (mazeLayout[row][col] === 3) {
+                        const powerPellet = new THREE.Mesh(powerPelletGeometry, powerPelletMaterial);
+                        powerPellet.position.set(col * cellSize, 0.5, row * cellSize);
+                        powerPellet.userData.value = 50;
+                        powerPellet.userData.isPower = true;
+                        powerPellets.push(powerPellet);
+                        scene.add(powerPellet);
+                    }
+                }
+            }
+        }
+
+        // ============================================
+        // CONTROLES VR
+        // ============================================
+        function setupVRControls() {
+            // Controladores VR (manos)
+            for (let i = 0; i < 2; i++) {
+                const controller = renderer.xr.getController(i);
+                controller.userData.index = i;
+                
+                // Visualización del controlador
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, -1], 3));
+                const material = new THREE.LineBasicMaterial({ color: 0xffffff });
+                const line = new THREE.Line(geometry, material);
+                controller.add(line);
+                
+                player.add(controller);
+                controllers.push(controller);
+
+                // Event listeners para VR
+                controller.addEventListener('connected', (event) => {
+                    controller.userData.gamepad = event.data.gamepad;
+                });
+            }
+        }
+
+        function setupVRButton() {
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                    if (supported) {
+                        const button = document.createElement('button');
+                        button.id = 'vrButton';
+                        button.textContent = 'ENTRAR VR';
+                        button.onclick = toggleVR;
+                        document.body.appendChild(button);
+                    }
+                });
+            }
+        }
+
+        async function toggleVR() {
+            if (vrSession === null) {
+                const sessionInit = { 
+                    optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+                };
+                const session = await navigator.xr.requestSession('immersive-vr', sessionInit);
+                
+                session.addEventListener('end', onSessionEnded);
+                await renderer.xr.setSession(session);
+                vrSession = session;
+
+                xrReferenceSpace = await session.requestReferenceSpace('local-floor');
+                
+                document.getElementById('vrButton').textContent = 'SALIR VR';
+            } else {
+                vrSession.end();
+            }
+        }
+
+        function onSessionEnded() {
+            vrSession = null;
+            xrReferenceSpace = null;
+            document.getElementById('vrButton').textContent = 'ENTRAR VR';
+        }
+
+        // ============================================
+        // MOVIMIENTO
+        // ============================================
+        function updatePlayer(delta) {
+            if (gameState !== 'playing') return;
+
+            const rotSpeed = 2.2 * delta; // radianes/segundo
+            const speed = moveSpeed * delta * 60;
+
+            // A / flecha izquierda = girar a la izquierda (rotar en Y positivo)
+            if (keys['a'] || keys['arrowleft']) {
+                player.rotation.y += rotSpeed;
+            }
+            // D / flecha derecha = girar a la derecha
+            if (keys['d'] || keys['arrowright']) {
+                player.rotation.y -= rotSpeed;
+            }
+
+            // W / flecha arriba = avanzar; S / flecha abajo = retroceder
+            let moveZ = 0;
+            if (keys['w'] || keys['arrowup'])   moveZ = -1;
+            if (keys['s'] || keys['arrowdown']) moveZ =  1;
+
+            // Controles VR (joystick)
+            if (renderer.xr.isPresenting && controllers.length > 0 && controllers[0].userData.gamepad) {
+                const axes = controllers[0].userData.gamepad.axes;
+                if (axes.length >= 4) {
+                    if (Math.abs(axes[2]) > 0.15) moveZ += axes[3];
+                    if (Math.abs(axes[0]) > 0.15) player.rotation.y -= axes[0] * rotSpeed;
+                }
+            }
+
+            if (moveZ !== 0) {
+                // Calcular vector hacia adelante en el plano XZ
+                const forward = new THREE.Vector3(0, 0, moveZ);
+                forward.applyQuaternion(player.quaternion);
+                forward.y = 0;
+                forward.normalize();
+                forward.multiplyScalar(speed);
+
+                // Mover con deslizamiento en paredes
+                const newPos = player.position.clone().add(forward);
+                if (!checkCollision(newPos)) {
+                    player.position.copy(newPos);
+                } else {
+                    // Deslizarse en X
+                    const slideX = player.position.clone();
+                    slideX.x += forward.x;
+                    if (!checkCollision(slideX)) {
+                        player.position.copy(slideX);
+                    } else {
+                        // Deslizarse en Z
+                        const slideZ = player.position.clone();
+                        slideZ.z += forward.z;
+                        if (!checkCollision(slideZ)) {
+                            player.position.copy(slideZ);
+                        }
+                    }
+                }
+                checkTeleport();
+            }
+        }
+
+        function checkCollision(position) {
+            const playerRadius = 0.4;
+            const halfSize = cellSize / 2; // 1.0
+
+            for (let child of maze.children) {
+                if (child.userData.isWall) {
+                    // AABB en plano XZ (ignora Y para no fallar al cambiar altura del jugador)
+                    const dx = Math.abs(position.x - child.position.x);
+                    const dz = Math.abs(position.z - child.position.z);
+                    if (dx < halfSize + playerRadius && dz < halfSize + playerRadius) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function checkTeleport() {
+            const maxX = (mazeLayout[0].length - 1) * cellSize;
+            const maxZ = (mazeLayout.length - 1) * cellSize;
+
+            if (player.position.x < 0) player.position.x = maxX;
+            if (player.position.x > maxX) player.position.x = 0;
+            if (player.position.z < 0) player.position.z = maxZ;
+            if (player.position.z > maxZ) player.position.z = 0;
+        }
+
+        // ============================================
+        // FANTASMAS IA
+        // ============================================
+        function chooseGhostDir(ghost, ghostCol, ghostRow, playerCol, playerRow) {
+            const dirs = [
+                { dx:  0, dz: -1 },
+                { dx:  0, dz:  1 },
+                { dx: -1, dz:  0 },
+                { dx:  1, dz:  0 }
+            ];
+            const last = ghost.userData.lastDir || { dx: 0, dz: 0 };
+
+            // Filtrar paredes y media vuelta
+            let valid = dirs.filter(d => {
+                const nr = ghostRow + d.dz;
+                const nc = ghostCol + d.dx;
+                if (nr < 0 || nr >= mazeLayout.length) return false;
+                if (nc < 0 || nc >= mazeLayout[0].length) return false;
+                if (mazeLayout[nr][nc] === 1) return false;
+                // No dar media vuelta (salvo que no haya otra opción)
+                if (d.dx === -last.dx && d.dz === -last.dz) return false;
+                return true;
+            });
+
+            // Si no hay opciones sin media vuelta, permitirla
+            if (valid.length === 0) {
+                valid = dirs.filter(d => {
+                    const nr = ghostRow + d.dz;
+                    const nc = ghostCol + d.dx;
+                    if (nr < 0 || nr >= mazeLayout.length) return false;
+                    if (nc < 0 || nc >= mazeLayout[0].length) return false;
+                    return mazeLayout[nr][nc] !== 1;
+                });
+            }
+
+            if (valid.length === 0) return { dx: 0, dz: 0 };
+
+            if (ghost.userData.frightened) {
+                // Huir: dirección más alejada del jugador
+                return valid.reduce((best, d) => {
+                    const dA = Math.abs((ghostCol + d.dx) - playerCol) + Math.abs((ghostRow + d.dz) - playerRow);
+                    const dB = Math.abs((ghostCol + best.dx) - playerCol) + Math.abs((ghostRow + best.dz) - playerRow);
+                    return dA > dB ? d : best;
+                });
+            } else {
+                // Perseguir: dirección más cercana al jugador
+                return valid.reduce((best, d) => {
+                    const dA = Math.abs((ghostCol + d.dx) - playerCol) + Math.abs((ghostRow + d.dz) - playerRow);
+                    const dB = Math.abs((ghostCol + best.dx) - playerCol) + Math.abs((ghostRow + best.dz) - playerRow);
+                    return dA < dB ? d : best;
+                });
+            }
+        }
+
+        function updateGhosts(delta) {
+            if (gameState !== 'playing') return;
+
+            const playerCol = Math.round(player.position.x / cellSize);
+            const playerRow = Math.round(player.position.z / cellSize);
+
+            for (let ghost of ghosts) {
+                const speed = (ghost.userData.frightened ? 0.04 : 0.07) * delta * 60;
+
+                // Color según estado
+                if (ghost.userData.frightened) {
+                    ghost.userData.body.material.color.setHex(0x0000FF);
+                } else {
+                    ghost.userData.body.material.color.setHex(ghost.userData.originalColor);
+                }
+
+                // ── Inicializar objetivo en la primera llamada ──
+                if (ghost.userData.targetX === undefined) {
+                    const col0 = Math.round(ghost.position.x / cellSize);
+                    const row0 = Math.round(ghost.position.z / cellSize);
+                    ghost.position.x = col0 * cellSize;
+                    ghost.position.z = row0 * cellSize;
+                    ghost.userData.lastDir = { dx: 0, dz: 0 };
+                    const dir0 = chooseGhostDir(ghost, col0, row0, playerCol, playerRow);
+                    ghost.userData.lastDir = dir0;
+                    ghost.userData.targetX = ghost.position.x + dir0.dx * cellSize;
+                    ghost.userData.targetZ = ghost.position.z + dir0.dz * cellSize;
+                }
+
+                // ── Mover hacia el objetivo ──
+                const tx = ghost.userData.targetX;
+                const tz = ghost.userData.targetZ;
+                const distToTarget = Math.abs(ghost.position.x - tx) + Math.abs(ghost.position.z - tz);
+
+                if (distToTarget <= speed) {
+                    // Llegó a la celda objetivo: snap y elegir siguiente dirección
+                    ghost.position.x = tx;
+                    ghost.position.z = tz;
+
+                    const ghostCol = Math.round(tx / cellSize);
+                    const ghostRow = Math.round(tz / cellSize);
+
+                    const newDir = chooseGhostDir(ghost, ghostCol, ghostRow, playerCol, playerRow);
+                    ghost.userData.lastDir = newDir;
+                    ghost.userData.targetX = tx + newDir.dx * cellSize;
+                    ghost.userData.targetZ = tz + newDir.dz * cellSize;
+                } else {
+                    // Avanzar hacia el objetivo
+                    const dir = ghost.userData.lastDir;
+                    ghost.position.x += dir.dx * speed;
+                    ghost.position.z += dir.dz * speed;
+                }
+
+                // Rotar hacia la dirección de movimiento
+                const d = ghost.userData.lastDir;
+                if (d && (d.dx !== 0 || d.dz !== 0)) {
+                    ghost.lookAt(ghost.position.x + d.dx, ghost.position.y, ghost.position.z + d.dz);
+                }
+
+                // ── Colisión con jugador (plano XZ) ──
+                const cdx = ghost.position.x - player.position.x;
+                const cdz = ghost.position.z - player.position.z;
+                if (Math.sqrt(cdx * cdx + cdz * cdz) < 1.1) {
+                    if (ghost.userData.frightened) {
+                        eatGhost(ghost);
+                    } else if (!invincible) {
+                        loseLife();
+                    }
+                }
+            }
+        }
+
+        // ============================================
+        // PELLETS Y PODER
+        // ============================================
+        function checkPelletCollection() {
+            if (gameState !== 'playing') return;
+
+            // Pellets normales
+            for (let i = pellets.length - 1; i >= 0; i--) {
+                const pellet = pellets[i];
+                const distance = player.position.distanceTo(pellet.position);
+                
+                if (distance < 0.8) {
+                    scene.remove(pellet);
+                    pellets.splice(i, 1);
+                    score += pellet.userData.value;
+                    updateHUD();
+                    playSound('pellet');
+                }
+            }
+
+            // Power pellets
+            for (let i = powerPellets.length - 1; i >= 0; i--) {
+                const pellet = powerPellets[i];
+                const distance = player.position.distanceTo(pellet.position);
+                
+                if (distance < 0.8) {
+                    scene.remove(pellet);
+                    powerPellets.splice(i, 1);
+                    score += pellet.userData.value;
+                    updateHUD();
+                    playSound('powerPellet');
+                    activatePowerMode();
+                }
+            }
+
+            // Verificar victoria
+            if (pellets.length === 0 && powerPellets.length === 0) {
+                winGame();
+            }
+        }
+
+        function activatePowerMode() {
+            powerMode = true;
+            powerModeTimer = 8000; // 8 segundos
+
+            for (let ghost of ghosts) {
+                ghost.userData.frightened = true;
+            }
+        }
+
+        function updatePowerMode(delta) {
+            // Contar invencibilidad
+            if (invincible) {
+                invincibleTimer -= delta;
+                if (invincibleTimer <= 0) invincible = false;
+            }
+
+            if (powerMode) {
+                powerModeTimer -= delta * 1000;
+                
+                if (powerModeTimer <= 0) {
+                    powerMode = false;
+                    for (let ghost of ghosts) {
+                        ghost.userData.frightened = false;
+                    }
+                }
+            }
+
+            // Animación de power pellets
+            for (let pellet of powerPellets) {
+                pellet.scale.setScalar(1 + Math.sin(Date.now() * 0.005) * 0.2);
+            }
+        }
+
+        // ============================================
+        // GAME LOGIC
+        // ============================================
+        function eatGhost(ghost) {
+            score += 200;
+            updateHUD();
+            playSound('ghost');
+
+            // Resetear fantasma a posición inicial y reiniciar IA
+            ghost.position.copy(ghost.userData.startPos);
+            ghost.userData.frightened = false;
+            ghost.userData.lastDir = { dx: 0, dz: 0 };
+            ghost.userData.targetX = undefined;
+        }
+
+        function loseLife() {
+            if (gameState !== 'playing') return;
+
+            lives--;
+            updateHUD();
+            playSound('death');
+
+            // Activar invencibilidad temporal para no perder múltiples vidas de golpe
+            invincible = true;
+            invincibleTimer = 2.0; // 2 segundos de protección
+
+            if (lives <= 0) {
+                gameOver();
+            } else {
+                resetPositions();
+            }
+        }
+
+        function resetPositions() {
+            // Reset jugador
+            for (let row = 0; row < mazeLayout.length; row++) {
+                for (let col = 0; col < mazeLayout[row].length; col++) {
+                    if (mazeLayout[row][col] === 4) {
+                        player.position.set(col * cellSize, 0, row * cellSize);
+                        break;
+                    }
+                }
+            }
+
+            // Reset fantasmas
+            for (let ghost of ghosts) {
+                ghost.position.copy(ghost.userData.startPos);
+                ghost.userData.frightened = false;
+                ghost.userData.lastDir = { dx: 0, dz: 0 };
+                ghost.userData.targetX = undefined;
+            }
+
+            powerMode = false;
+        }
+
+        function winGame() {
+            gameState = 'won';
+            playSound('win');
+            showMessage('¡VICTORIA! 🎉<br>Puntuación: ' + score + '<br><small style="font-size:24px">Click para reiniciar</small>');
+        }
+
+        function gameOver() {
+            gameState = 'gameover';
+            showMessage('GAME OVER 👻<br>Puntuación Final: ' + score + '<br><small style="font-size:24px">Click para reiniciar</small>');
+        }
+
+        function restartGame() {
+            // Eliminar pellets actuales de la escena
+            for (let p of pellets) scene.remove(p);
+            for (let p of powerPellets) scene.remove(p);
+            pellets = [];
+            powerPellets = [];
+
+            // Reiniciar estado
+            score = 0;
+            lives = 3;
+            gameState = 'playing';
+            powerMode = false;
+            powerModeTimer = 0;
+
+            // Resetear posiciones
+            resetPositions();
+
+            // Recrear pellets
+            createPellets();
+
+            updateHUD();
+            document.getElementById('message').style.display = 'none';
+        }
+
+        // ============================================
+        // UI
+        // ============================================
+        function updateHUD() {
+            document.getElementById('score').textContent = 'PUNTOS: ' + score;
+            
+            let heartsDisplay = '';
+            for (let i = 0; i < lives; i++) {
+                heartsDisplay += '❤️';
+            }
+            document.getElementById('lives').textContent = 'VIDAS: ' + heartsDisplay;
+        }
+
+        function showMessage(text) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = text;
+            messageDiv.style.display = 'block';
+        }
+
+        // ============================================
+        // MINIMAPA
+        // ============================================
+        function initMinimap() {
+            minimapCanvas = document.getElementById('minimapCanvas');
+            minimapCtx = minimapCanvas.getContext('2d');
+            
+            // Configurar tamaño del canvas
+            minimapCanvas.width = 250;
+            minimapCanvas.height = 250;
+        }
+
+        function drawMinimap() {
+            if (!minimapCtx) return;
+
+            const ctx = minimapCtx;
+            const width = minimapCanvas.width;
+            const height = minimapCanvas.height;
+
+            // Limpiar canvas
+            ctx.fillStyle = 'rgba(0, 0, 20, 0.95)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Calcular escala
+            const cols = mazeLayout[0].length;
+            const rows = mazeLayout.length;
+            const cellW = width / cols;
+            const cellH = height / rows;
+
+            // Dibujar muros
+            ctx.fillStyle = '#0000FF';
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    if (mazeLayout[row][col] === 1) {
+                        ctx.fillRect(col * cellW, row * cellH, cellW, cellH);
+                    }
+                }
+            }
+
+            // Dibujar pellets normales
+            ctx.fillStyle = '#FFFF00';
+            for (let pellet of pellets) {
+                const x = (pellet.position.x / cellSize) * cellW;
+                const y = (pellet.position.z / cellSize) * cellH;
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Dibujar power pellets
+            ctx.fillStyle = '#FFFFFF';
+            for (let pellet of powerPellets) {
+                const x = (pellet.position.x / cellSize) * cellW;
+                const y = (pellet.position.z / cellSize) * cellH;
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Dibujar fantasmas
+            for (let ghost of ghosts) {
+                const x = (ghost.position.x / cellSize) * cellW;
+                const y = (ghost.position.z / cellSize) * cellH;
+                
+                if (ghost.userData.frightened) {
+                    ctx.fillStyle = '#0000FF';
+                } else {
+                    ctx.fillStyle = '#' + ghost.userData.originalColor.toString(16).padStart(6, '0');
+                }
+                
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Borde blanco
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+
+            // Dibujar jugador (Pac-Man)
+            const playerX = (player.position.x / cellSize) * cellW;
+            const playerY = (player.position.z / cellSize) * cellH;
+            
+            // Cuerpo amarillo
+            ctx.fillStyle = '#FFFF00';
+            ctx.beginPath();
+            ctx.arc(playerX, playerY, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Dirección (triángulo)
+            ctx.fillStyle = '#FFD700';
+            ctx.save();
+            ctx.translate(playerX, playerY);
+            ctx.rotate(player.rotation.y);
+            ctx.beginPath();
+            ctx.moveTo(8, 0);
+            ctx.lineTo(3, -3);
+            ctx.lineTo(3, 3);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
+            // Borde del mapa
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(0, 0, width, height);
+        }
+
+        // ============================================
+        // SONIDOS
+        // ============================================
+        function playSound(type) {
+            if (!sounds[type]) return;
+
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.value = sounds[type].freq;
+            oscillator.type = 'square';
+
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + sounds[type].duration);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + sounds[type].duration);
+        }
+
+        // ============================================
+        // LOOP DE ANIMACIÓN
+        // ============================================
+        function animate() {
+            const delta = clock.getDelta();
+
+            updatePlayer(delta);
+            updateGhosts(delta);
+            checkPelletCollection();
+            updatePowerMode(delta);
+
+            // Luz sigue al jugador a la altura del corredor
+            if (window.playerLight) {
+                window.playerLight.position.set(player.position.x, 1.5, player.position.z);
+            }
+
+            // Actualizar minimapa
+            drawMinimap();
+
+            renderer.render(scene, camera);
+        }
+
+        // ============================================
+        // RESPONSIVE
+        // ============================================
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ============================================
+        // INICIAR
+        // ============================================
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
